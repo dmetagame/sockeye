@@ -22,7 +22,7 @@ audit the chain of evidence and jump straight to containment.
 ```mermaid
 flowchart LR
     subgraph Agent["Sockeye agent (Python)"]
-        C["Claude Opus 4.8\n(agentic tool loop,\nadaptive thinking)"]
+        C["Claude\n(Agent SDK tool loop)"]
         R["Triage report\n(markdown, reports/)"]
     end
 
@@ -47,13 +47,14 @@ report with verdict, timeline, IOCs, evidence, and ranked containment actions.
 ## Quick start
 
 Prereqs: Docker, Python 3.10+, a [splunk.com account](https://www.splunk.com/en_us/form/sign-up.html),
-an [Anthropic API key](https://console.anthropic.com/).
+and [Claude Code](https://claude.com/claude-code) logged in (Pro/Max subscription works —
+no API key needed; `ANTHROPIC_API_KEY` is also supported).
 
 ```bash
 git clone https://github.com/dmetagame/sockeye && cd sockeye
 
 # 1. Configure secrets
-cp .env.example .env           # edit: SPLUNK_PASSWORD, SPLUNK_HEC_TOKEN, ANTHROPIC_API_KEY
+cp .env.example .env           # edit: SPLUNK_PASSWORD, SPLUNK_HEC_TOKEN
 
 # 2. Start Splunk Enterprise (free trial license)
 docker compose -f docker/docker-compose.yml --env-file .env up -d
@@ -94,7 +95,8 @@ Sockeye finds the trail on its own — the system prompt describes the *method*
 
 - **Splunk Enterprise** (Docker, trial license) + **official Splunk MCP Server** (Splunkbase 7931)
 - **Model Context Protocol** — streamable HTTP transport, bearer-token auth
-- **Claude Opus 4.8** via the Anthropic Python SDK's MCP tool-runner helpers
+- **Claude Agent SDK** (Python) — the agent loop runs on Claude Code, so a
+  Claude Pro/Max subscription or an API key both work
 - Python 3.10+, no framework — the agent is ~100 lines
 
 ## Repo layout

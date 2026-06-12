@@ -27,11 +27,18 @@ echo "==> Creating 'security' index..."
 echo "==> Enabling token authentication..."
 "${CURL[@]}" "$MGMT/services/admin/Token-auth/tokens_auth" -d disabled=false >/dev/null
 
-echo "==> Granting MCP capabilities to the admin role..."
-for cap in mcp_tool_execute mcp_tool_admin; do
-  "${CURL[@]}" "$MGMT/services/authorization/roles/admin" -d "imported_capabilities=$cap" >/dev/null 2>&1 \
-    || echo "    note: capability $cap not present yet (app not installed?) — rerun after install"
-done
+echo "==> Granting MCP capabilities to the admin role (authorize.conf)..."
+# NOTE: do NOT POST capabilities to /services/authorization/roles/admin —
+# that REPLACES the role's explicit capability list and strips admin rights.
+docker exec -u root sockeye-splunk sh -c 'cat > /opt/splunk/etc/system/local/authorize.conf <<CONF
+[tokens_auth]
+disabled = 0
+
+[role_admin]
+mcp_tool_admin = enabled
+mcp_tool_execute = enabled
+CONF
+chown splunk:splunk /opt/splunk/etc/system/local/authorize.conf'
 
 APP_PKG=$(ls "$HERE"/docker/apps/*.tgz "$HERE"/docker/apps/*.spl 2>/dev/null | head -1 || true)
 if [ -n "$APP_PKG" ]; then
@@ -55,10 +62,11 @@ else
   echo "   https://splunkbase.splunk.com/app/7931 and rerun this script."
 fi
 
-echo "==> Creating bearer token for the MCP endpoint..."
-TOKEN=$("${CURL[@]}" "$MGMT/services/authorization/tokens?output_mode=json" \
-  -d name=admin -d audience=sockeye-mcp \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['entry'][0]['content']['token'])")
+echo "==> Minting encrypted MCP token (app endpoint /services/mcp_token)..."
+# The MCP server only accepts RSA-encrypted tokens with audience 'mcp',
+# minted by the app itself — generic Splunk JWTs are rejected.
+TOKEN=$("${CURL[@]}" "$MGMT/services/mcp_token?username=admin&expires_on=%2B30d" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('token') or sys.exit(str(d)))")
 
 if grep -q '^SPLUNK_MCP_TOKEN=' "$HERE/.env"; then
   sed -i "s|^SPLUNK_MCP_TOKEN=.*|SPLUNK_MCP_TOKEN=$TOKEN|" "$HERE/.env"
