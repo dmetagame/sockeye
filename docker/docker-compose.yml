@@ -1,0 +1,21 @@
+services:
+  splunk:
+    image: splunk/splunk:latest
+    container_name: sockeye-splunk
+    hostname: sockeye-splunk
+    environment:
+      SPLUNK_START_ARGS: --accept-license
+      SPLUNK_PASSWORD: ${SPLUNK_PASSWORD:?set SPLUNK_PASSWORD in .env}
+      SPLUNK_HEC_TOKEN: ${SPLUNK_HEC_TOKEN:?set SPLUNK_HEC_TOKEN in .env}
+    ports:
+      - "8000:8000"   # Splunk Web
+      - "8088:8088"   # HTTP Event Collector
+      - "8089:8089"   # Management API + MCP endpoint (/services/mcp)
+    volumes:
+      - ./apps:/tmp/sockeye-apps:ro
+      - splunk-var:/opt/splunk/var
+      - splunk-etc:/opt/splunk/etc
+
+volumes:
+  splunk-var:
+  splunk-etc:

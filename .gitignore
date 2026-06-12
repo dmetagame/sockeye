@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+docker/apps/*.tgz
+docker/apps/*.spl
+reports/
+*.token
