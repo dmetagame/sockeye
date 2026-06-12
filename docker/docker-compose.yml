@@ -5,6 +5,7 @@ services:
     hostname: sockeye-splunk
     environment:
       SPLUNK_START_ARGS: --accept-license
+      SPLUNK_GENERAL_TERMS: --accept-sgt-current-at-splunk-com
       SPLUNK_PASSWORD: ${SPLUNK_PASSWORD:?set SPLUNK_PASSWORD in .env}
       SPLUNK_HEC_TOKEN: ${SPLUNK_HEC_TOKEN:?set SPLUNK_HEC_TOKEN in .env}
     ports:

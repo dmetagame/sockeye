@@ -57,7 +57,7 @@ fi
 
 echo "==> Creating bearer token for the MCP endpoint..."
 TOKEN=$("${CURL[@]}" "$MGMT/services/authorization/tokens?output_mode=json" \
-  -d name=admin -d audience=sockeye-mcp -d expires_on=+30d \
+  -d name=admin -d audience=sockeye-mcp \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['entry'][0]['content']['token'])")
 
 if grep -q '^SPLUNK_MCP_TOKEN=' "$HERE/.env"; then
