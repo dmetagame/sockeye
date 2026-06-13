@@ -109,6 +109,8 @@ for _ in range(600):
 
 events.sort(key=lambda e: e["time"])
 print(f"sending {len(events)} events to {HEC_URL} ...")
+print("NOTE: not idempotent — running twice doubles every count in the demo.")
+print("      To reseed cleanly: docker compose down -v, bring it back up, rerun setup.")
 
 ctx = ssl.create_default_context()
 ctx.check_hostname = False

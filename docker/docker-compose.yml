@@ -13,7 +13,6 @@ services:
       - "8088:8088"   # HTTP Event Collector
       - "8089:8089"   # Management API + MCP endpoint (/services/mcp)
     volumes:
-      - ./apps:/tmp/sockeye-apps:ro
       - splunk-var:/opt/splunk/var
       - splunk-etc:/opt/splunk/etc
 

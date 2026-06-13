@@ -65,14 +65,19 @@ docker compose -f docker/docker-compose.yml --env-file .env up -d
 # 4. Configure Splunk: index, token auth, MCP app install, bearer token
 ./scripts/setup_splunk.sh      # writes SPLUNK_MCP_TOKEN into .env
 
-# 5. Seed the synthetic security incident
+# 5. Seed the synthetic security incident (run ONCE — reseeding doubles counts)
 set -a; source .env; set +a
 python3 scripts/seed_data.py
 
 # 6. Run the agent
-pip install -r requirements.txt
-python3 agent/triage.py        # report lands in reports/
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python agent/triage.py   # report lands in reports/
 ```
+
+> **TLS note:** the agent disables certificate verification for the Claude
+> subprocess **only when the MCP URL is localhost**, because Splunk's default
+> self-signed cert can't pass hostname checks. Against a real Splunk
+> deployment with a proper cert, verification stays on.
 
 ## The demo scenario
 

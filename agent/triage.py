@@ -56,6 +56,14 @@ async def main() -> None:
     if not MCP_TOKEN:
         sys.exit("SPLUNK_MCP_TOKEN not set — run scripts/setup_splunk.sh, then `set -a; source .env`")
 
+    env = dict(os.environ)
+    if any(h in MCP_URL for h in ("localhost", "127.0.0.1")):
+        # Local demo only: Splunk's default cert (CN=SplunkServerDefaultCert)
+        # fails Node's hostname check, so verification is bypassed for the
+        # subprocess. For any non-local Splunk, put a real cert on splunkd
+        # and this bypass never activates.
+        env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
+
     options = ClaudeAgentOptions(
         system_prompt=SYSTEM,
         mcp_servers={
@@ -68,8 +76,7 @@ async def main() -> None:
         allowed_tools=["mcp__splunk"],   # every tool the Splunk MCP server exposes
         disallowed_tools=["Bash", "Write", "Edit"],
         max_turns=40,
-        # local Splunk ships a self-signed cert on :8089
-        env={**os.environ, "NODE_TLS_REJECT_UNAUTHORIZED": "0"},
+        env=env,
     )
 
     report_text = ""
@@ -78,12 +85,16 @@ async def main() -> None:
         options=options,
     ):
         if isinstance(message, AssistantMessage):
+            texts = []
             for block in message.content:
                 if isinstance(block, ToolUseBlock):
                     print(f"[tool] {block.name} {str(block.input)[:160]}")
                 elif isinstance(block, TextBlock):
                     print(block.text)
-                    report_text = block.text   # last text block = final report
+                    texts.append(block.text)
+            if texts:
+                # last assistant message with text = the final report
+                report_text = "\n\n".join(texts)
         elif isinstance(message, ResultMessage):
             cost = f"${message.total_cost_usd:.4f}" if message.total_cost_usd else "subscription"
             print(f"\n[sockeye] done in {message.num_turns} turns ({cost})")
