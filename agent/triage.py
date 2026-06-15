@@ -35,10 +35,8 @@ DEFAULT_MCP_URL = "http://127.0.0.1:8089/services/mcp"
 DEFAULT_INDEX = "security"
 DEFAULT_EARLIEST = "-48h"
 DEFAULT_MODEL = "sonnet"
-DEFAULT_MCP_REMOTE_COMMAND = "mcp-remote"
 READ_ONLY_SPLUNK_TOOLS = [
     "mcp__splunk__splunk_run_query",
-    "mcp__splunk__splunk_get_metadata",
 ]
 REQUIRED_REPORT_SECTIONS = (
     "verdict",
@@ -139,9 +137,12 @@ def validate_config(args: argparse.Namespace, mcp_url: str, token: str | None) -
 def subprocess_env(mcp_url: str) -> dict[str, str]:
     env = dict(os.environ)
     # An explicit ClaudeAgentOptions.model must not be overridden by a stale
-    # machine-level model selection. Authentication variables remain intact.
+    # machine-level model selection. A custom API gateway is also ignored by
+    # default because it can silently break Claude subscription authentication.
     for name in ("ANTHROPIC_MODEL", "CLAUDE_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL"):
-        env.pop(name, None)
+        env[name] = ""
+    if not bool_env("SOCKEYE_ALLOW_CUSTOM_ANTHROPIC_BASE_URL"):
+        env["ANTHROPIC_BASE_URL"] = ""
     parsed = urlparse(mcp_url)
     if parsed.scheme != "https":
         return env
@@ -201,19 +202,18 @@ Your final response must contain only the markdown report."""
 def build_options(
     args: argparse.Namespace, mcp_url: str, token: str
 ) -> ClaudeAgentOptions:
+    env = subprocess_env(mcp_url)
+    env["SPLUNK_MCP_TOKEN"] = token
     return ClaudeAgentOptions(
         model=args.model,
         system_prompt=build_system_prompt(args.index, args.earliest),
         mcp_servers={
             "splunk": {
-                "command": os.getenv(
-                    "SOCKEYE_MCP_REMOTE_COMMAND", DEFAULT_MCP_REMOTE_COMMAND
-                ),
-                "args": [
-                    mcp_url,
-                    "--header",
-                    f"Authorization: Bearer {token}",
-                ],
+                "type": "http",
+                "url": mcp_url,
+                # Claude Code expands this from options.env at runtime, keeping
+                # the encrypted token out of the subprocess command line.
+                "headers": {"Authorization": "Bearer ${SPLUNK_MCP_TOKEN}"},
             }
         },
         strict_mcp_config=True,
@@ -223,7 +223,7 @@ def build_options(
         allowed_tools=READ_ONLY_SPLUNK_TOOLS,
         max_turns=args.max_turns,
         cwd=ROOT,
-        env=subprocess_env(mcp_url),
+        env=env,
     )
 
 

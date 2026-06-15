@@ -35,8 +35,11 @@ escalation, lateral movement, collection, and outbound data transfer.
 - The Claude SDK is restricted to the read-only `splunk_run_query` MCP tool;
   local file, shell, web, and write tools are not exposed to the agent.
 - Docker publishes Splunk Web, HEC, and the management/MCP port on loopback only.
-- The local demo uses HTTP for MCP on loopback to avoid globally disabling TLS
-  verification for the Claude subprocess. Remote MCP URLs must use HTTPS.
+- The Agent SDK connects directly to MCP over loopback HTTP. Its bearer header
+  uses runtime environment expansion, so the encrypted token is not placed in
+  the Claude subprocess command line. Remote MCP URLs must use HTTPS.
+- `setup_splunk.sh` disables Splunk management TLS only inside the disposable,
+  loopback-bound demo container. Do not run it against an existing deployment.
 - Log content is treated as untrusted input and cannot override agent policy.
 
 This is a triage assistant, not an autonomous response system. A human should
@@ -46,6 +49,10 @@ review findings before taking containment action.
 
 Prerequisites: Docker with Compose, Python 3.10+, a [Splunk account][splunk], and
 either Claude Code logged into a Pro/Max account or an `ANTHROPIC_API_KEY`.
+Sockeye ignores machine-level `ANTHROPIC_MODEL` and `ANTHROPIC_BASE_URL`
+overrides so the selected model and first-party subscription endpoint are
+deterministic. Set `SOCKEYE_ALLOW_CUSTOM_ANTHROPIC_BASE_URL=1` only when an
+intentional compatible gateway is required.
 
 ```bash
 git clone https://github.com/dmetagame/sockeye
@@ -83,11 +90,23 @@ python3 scripts/verify_mcp.py
 ## Web dashboard
 
 Sockeye also ships as an authenticated web application with live investigation
-progress, persisted history, safe report rendering, and markdown downloads.
+progress, persisted history, safe report rendering, and markdown downloads. To
+use an existing Claude Pro/Max login locally, run the web service on the host:
 
 ```bash
-# After completing the Splunk setup above, set ANTHROPIC_API_KEY and
-# SOCKEYE_WEB_API_KEY in .env, then run:
+# Set SOCKEYE_WEB_API_KEY in .env, then run:
+set -a
+source .env
+set +a
+SOCKEYE_REQUIRE_ANTHROPIC_API_KEY=0 \
+SOCKEYE_STATE_DIR=.local/state \
+  .venv/bin/uvicorn web.app:app --host 127.0.0.1 --port 3000
+```
+
+For an isolated container deployment, provide an Anthropic API key instead:
+
+```bash
+# Set ANTHROPIC_API_KEY and SOCKEYE_WEB_API_KEY in .env, then run:
 docker compose \
   -f docker/docker-compose.yml \
   -f docker/docker-compose.web.yml \
@@ -96,8 +115,9 @@ docker compose \
 ```
 
 Open `http://127.0.0.1:3000`. The service runs one investigation at a time,
-keeps Splunk on the private Compose network, and stores job history in a Docker
-volume. See [docs/deployment.md](docs/deployment.md) for hosted deployment,
+and persists job history in the configured state directory. The container mode
+keeps Splunk on the private Compose network and stores state in a Docker volume.
+See [docs/deployment.md](docs/deployment.md) for both modes, hosted deployment,
 security boundaries, environment variables, and API endpoints.
 
 ## What the agent does

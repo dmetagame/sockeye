@@ -4,7 +4,26 @@ Sockeye includes a single-tenant FastAPI dashboard suitable for a hackathon demo
 or an internal security tool. The web container runs the Claude Agent SDK; Splunk
 and its official MCP Server remain a separate private service.
 
-## Local Docker deployment
+## Local host deployment with Claude Pro or Max
+
+Claude Code subscription authentication is stored on the host and is not copied
+into a container. After completing the normal Splunk setup, set a random
+`SOCKEYE_WEB_API_KEY` in `.env`, then run:
+
+```bash
+set -a
+source .env
+set +a
+SOCKEYE_REQUIRE_ANTHROPIC_API_KEY=0 \
+SOCKEYE_STATE_DIR=.local/state \
+  .venv/bin/uvicorn web.app:app --host 127.0.0.1 --port 3000
+```
+
+This mode uses the existing `claude auth login` session and requires no
+`ANTHROPIC_API_KEY`. Keep the terminal open or install the same command as a
+user service for an always-on local dashboard.
+
+## Local Docker deployment with an API key
 
 Complete the normal Splunk setup first so `.env` contains a scoped MCP token:
 
@@ -35,6 +54,9 @@ docker compose \
 
 Open `http://127.0.0.1:3000` and enter `SOCKEYE_WEB_API_KEY`. Reports and job
 metadata persist in the `sockeye-data` Docker volume.
+
+The container intentionally requires `ANTHROPIC_API_KEY`; mounting host Claude
+credentials into an application container is not supported or recommended.
 
 The local overlay explicitly permits HTTP only between `web` and `splunk` on
 their private Docker network. That exception must not be copied to a deployment

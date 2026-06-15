@@ -1,7 +1,6 @@
 FROM node:22-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752
 
 ARG CLAUDE_CODE_VERSION=2.1.177
-ARG MCP_REMOTE_VERSION=0.1.38
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PATH=/opt/venv/bin:$PATH \
@@ -12,9 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/* \
-    && npm install --global \
-      "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
-      "mcp-remote@${MCP_REMOTE_VERSION}" \
+    && npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin sockeye
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1

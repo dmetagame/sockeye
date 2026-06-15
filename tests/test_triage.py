@@ -60,6 +60,7 @@ def test_validate_config_rejects_remote_http() -> None:
 def test_build_options_is_read_only_and_isolated(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SOCKEYE_ALLOW_INSECURE_REMOTE_HTTP", raising=False)
     monkeypatch.setenv("ANTHROPIC_MODEL", "claude-nonexistent")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://localhost:9999")
     options = triage.build_options(
         args(), "http://localhost:8089/services/mcp", "secret-token"
     )
@@ -69,13 +70,23 @@ def test_build_options_is_read_only_and_isolated(monkeypatch: pytest.MonkeyPatch
     assert options.tools is None
     assert options.permission_mode == "dontAsk"
     assert options.allowed_tools == triage.READ_ONLY_SPLUNK_TOOLS
-    assert options.mcp_servers["splunk"]["command"] == "mcp-remote"
-    assert options.mcp_servers["splunk"]["args"] == [
-        "http://localhost:8089/services/mcp",
-        "--header",
-        "Authorization: Bearer secret-token",
-    ]
-    assert "ANTHROPIC_MODEL" not in options.env
+    assert options.mcp_servers["splunk"] == {
+        "type": "http",
+        "url": "http://localhost:8089/services/mcp",
+        "headers": {"Authorization": "Bearer ${SPLUNK_MCP_TOKEN}"},
+    }
+    assert options.env["SPLUNK_MCP_TOKEN"] == "secret-token"
+    assert options.env["ANTHROPIC_MODEL"] == ""
+    assert options.env["ANTHROPIC_BASE_URL"] == ""
+
+
+def test_custom_anthropic_gateway_requires_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://gateway.example.com")
+    monkeypatch.setenv("SOCKEYE_ALLOW_CUSTOM_ANTHROPIC_BASE_URL", "1")
+    env = triage.subprocess_env("http://127.0.0.1:8089/services/mcp")
+    assert env["ANTHROPIC_BASE_URL"] == "https://gateway.example.com"
 
 
 def test_report_validation_accepts_complete_report() -> None:
@@ -100,12 +111,13 @@ def test_execution_audit_uses_exact_query() -> None:
 def test_only_approved_splunk_denials_are_fatal() -> None:
     denials = [
         {"tool_name": "Bash", "tool_input": {"command": "whoami"}},
+        {"tool_name": "mcp__splunk__splunk_get_metadata", "tool_input": {}},
         {
             "tool_name": "mcp__splunk__splunk_run_query",
             "tool_input": {"query": "search index=security | stats count"},
         },
     ]
-    assert triage.required_permission_denials(denials) == [denials[1]]
+    assert triage.required_permission_denials(denials) == [denials[2]]
 
 
 def test_write_report_is_utf8_and_atomic(tmp_path: pathlib.Path) -> None:
