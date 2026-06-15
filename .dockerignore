@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+.env
+.env.*
+!.env.example
+docker/apps/*.tgz
+docker/apps/*.spl
+reports
+tests
+docs

@@ -1,88 +1,104 @@
-# SOC Triage Report — `index=security` 48h Sweep
+# SOC Triage Report - `index=security` 48-hour Sweep
 
-**Analyst:** Sockeye · **Run time:** 2026-06-13 · **Window:** 2026-06-11 → 2026-06-13 (last 48h)
+> Representative output from the deterministic demo. Event timestamps vary with
+> seed time; counts and the transfer total remain stable after deduplication.
 
----
+## Verdict: CONFIRMED INCIDENT - Severity: Critical
 
-## Verdict: 🔴 CONFIRMED INCIDENT — **Severity: CRITICAL**
+The `svc-backup` account experienced 180 failed SSH logins from
+`91.240.118.172`, followed by a successful login from the same source. The
+account then performed successful privilege escalation, appeared on
+`files01.sockeye.local`, staged `/srv/finance` and `/srv/hr`, and was associated
+with 570,904,170 outbound bytes to the original external source. The sequence is
+consistent with account compromise and data exfiltration.
 
-A service account (`svc-backup`) was compromised via SSH brute-force from a hostile external IP, escalated to root, moved laterally to the file server, archived Finance/HR data, and exfiltrated **~570 MB** back to the attacker. This is a complete, successful intrusion with confirmed data theft — not an attempt. A separate Tor-based password spray ran in parallel but **failed** (zero successes).
+A separate distributed password spray generated 220 failures across multiple
+accounts. No successful login from those five spray sources was observed in the
+search window.
 
----
+## Timeline
 
-## Timeline of Attack Phases (all 2026-06-13)
-
-| Time | Phase | Evidence |
-|------|-------|----------|
-| 08:13–09:25 | **Recon / spray (failed)** | Tor exit nodes `185.220.101.0/24` spray ~17 users incl. `svc-backup`, `administrator`, `root` against `dc01.sockeye.local` — all `failure` |
-| 11:10:33–11:37 | **Brute-force (vertical)** | `91.240.118.172` hammers `svc-backup` on `dc01` — **180 failed** "Failed password" events in ~7 min |
-| **11:37:33** | **Initial access** | `Accepted password` — `svc-backup` from `91.240.118.172` on `dc01.sockeye.local` |
-| **11:40:33** | **Privilege escalation** | audit: `sudo su -` → `result: success`, user `svc-backup`, src `91.240.118.172` |
-| **11:44:13** | **Lateral movement** | `svc-backup` SSH `Accepted publickey` from `10.20.1.5` → `files01.sockeye.local` (audit note: *"first ever login of this account here"*) |
-| **11:49:13** | **Collection / staging** | audit `file_access`: `tar czf /tmp/.cache.tgz /srv/finance /srv/hr` → success |
-| **11:52:33–12:00:48** | **Exfiltration** | 12 SSL flows `10.20.1.5 → 91.240.118.172:443`, **570,904,170 bytes (~570 MB)** total |
-
-Dwell time from initial access to exfiltration: **~15 minutes** (highly automated).
-
----
+| Relative phase | Observed evidence |
+|---|---|
+| T-6h | 220 distributed authentication failures across multiple accounts |
+| T-3h | 180 focused failures for `svc-backup` from `91.240.118.172` |
+| T-2h52m | Successful `svc-backup` login from the focused source |
+| +3m | `sudo su -` completed with `result=success` |
+| +6m40s | First-observed `svc-backup` login on `files01.sockeye.local` |
+| +11m40s | Finance and HR directories archived to `/tmp/.cache.tgz` |
+| +15m to +23m | 12 outbound flows totaling 570,904,170 bytes to `91.240.118.172:443` |
 
 ## IOCs
 
-**Attacker infrastructure**
-- `91.240.118.172` — brute-force source + exfil destination (C2/drop). **Block immediately.**
-- `185.220.101.12`, `.34`, `.57`, `.88`, `.144` — Tor exit nodes used for the (failed) spray.
+- `91.240.118.172`: observed brute-force source and later transfer destination
+- `svc-backup`: compromised service account
+- `dc01.sockeye.local`: initial access and privilege-escalation host
+- `files01.sockeye.local`: collection and transfer host
+- `/tmp/.cache.tgz`: staged archive path
+- `185.220.101.12`, `.34`, `.57`, `.88`, `.144`: unsuccessful spray sources
 
-**Compromised accounts**
-- `svc-backup` — fully compromised; brute-forced, escalated to root, used for lateral movement + collection.
+The data establishes suspicious behavior for these values inside the demo. It
+does not independently establish reputation, geolocation, or infrastructure
+ownership.
 
-**Affected hosts**
-- `dc01.sockeye.local` — initial foothold + priv-esc (domain controller).
-- `files01.sockeye.local` — file server, data staged & stolen from `/srv/finance` and `/srv/hr`.
-- `10.20.1.5` — internal pivot host that performed the lateral login and the exfil transfer.
+## Evidence
 
-**Artifacts**
-- `/tmp/.cache.tgz` — staged exfil archive (Finance + HR data).
+**Authentication outcomes by source and user**
+
+```spl
+search index=security earliest=-48h latest=now sourcetype=auth:demo
+| eval unique_event=coalesce(event_id, _cd)
+| dedup unique_event
+| stats count by src_ip, user, action
+| sort 0 - count
+```
+
+Result: `91.240.118.172` produced 180 failures and one success for
+`svc-backup`. The five distributed spray sources produced failures only.
+
+**Post-access activity for the compromised account**
+
+```spl
+search index=security earliest=-48h latest=now user="svc-backup"
+| eval unique_event=coalesce(event_id, _cd)
+| dedup unique_event
+| table _time, host, sourcetype, action, src_ip, dest, command, result, note
+| sort 0 _time
+```
+
+Result: successful access was followed by privilege escalation, a login on the
+file server, and archive creation.
+
+**Outbound transfer to the original source**
+
+```spl
+search index=security earliest=-48h latest=now sourcetype=network:demo dest_ip="91.240.118.172"
+| eval unique_event=coalesce(event_id, _cd)
+| dedup unique_event
+| stats count as flows, sum(bytes_out) as bytes_out by src_ip, dest_ip, dest_port
+```
+
+Result: 12 flows from `10.20.1.5` to `91.240.118.172:443`, totaling
+570,904,170 bytes.
+
+## Recommended actions
+
+1. Block `91.240.118.172` at network controls and hunt for other communication
+   with that address.
+2. Isolate `files01.sockeye.local` and the initial-access host while preserving
+   volatile and disk evidence.
+3. Disable `svc-backup`, rotate its password and SSH keys, and identify every
+   system where the credentials were authorized.
+4. Determine exactly which Finance and HR records were present in the staged
+   archive and begin the appropriate incident and legal review.
+5. Review privilege-escalation, account, persistence, and scheduled-task changes
+   on affected systems.
+6. Add detections for focused authentication failures, service-account
+   escalation, first-observed service-account logins, and outbound byte anomalies.
 
 ---
 
-## Evidence — Key SPL Queries Run This Session
+## Execution Audit
 
-**1. Auth failures by source/user (48h)** — surfaced both attack patterns:
-```spl
-index=security (action=failure OR ...) | stats count as failures by src_ip, user | sort - failures
-```
-→ `91.240.118.172` / `svc-backup` = **180 failures** (vertical brute-force); `185.220.101.0/24` = low-count spray across ~17 users.
-
-**2. Successes + brute-force outcome pivot:**
-```spl
-index=security (src_ip="91.240.118.172" OR src_ip="185.220.101.*") | stats count by src_ip, action, user
-```
-→ `91.240.118.172`: 180 `failure`, **1 `success`, 1 `priv_escalation`** on `svc-backup`. All `185.220.101.x` = `failure` only (**spray failed, 0 successes**).
-
-**3. Outbound transfer volume:**
-```spl
-index=security sourcetype=network:demo | stats sum(bytes_out) as total_bytes_out, count by src_ip, dest_ip | sort - total_bytes_out
-```
-→ `10.20.1.5 → 91.240.118.172` = **570,904,170 bytes / 12 flows**. Next-highest pair ≈ 0.9 MB (normal baseline) — anomaly factor ~650×.
-
-**4. Kill-chain reconstruction (auth + audit + network correlated):**
-```spl
-index=security (user=svc-backup AND (action=success OR action=priv_escalation))
-  OR (src_ip=10.20.1.5 AND dest_ip=91.240.118.172) OR sourcetype=audit:demo
-| table t, sourcetype, action, user, src_ip, dest, dest_ip, bytes_out, _raw | sort t
-```
-→ Produced the ordered timeline above: access (11:37) → `sudo su -` (11:40) → lateral login to files01 (11:44) → `tar` of /srv/finance & /srv/hr (11:49) → 570 MB exfil (11:52–12:00).
-
----
-
-## Recommended Actions (ranked by urgency)
-
-1. **CONTAIN NOW — block C2:** Block `91.240.118.172` inbound/outbound at perimeter firewall. Hunt for any other internal hosts talking to it.
-2. **Isolate hosts:** Network-quarantine `files01.sockeye.local`, `10.20.1.5`, and `dc01.sockeye.local` for forensic imaging before reboot/cleanup.
-3. **Disable & rotate `svc-backup`:** Lock the account immediately; rotate its credentials **and** revoke/rotate its SSH keys (lateral move used `Accepted publickey`). Audit where this key is authorized.
-4. **Assume DC compromise:** `sudo su -` succeeded on a domain controller. Rotate `krbtgt` (twice), all domain admin and service-account credentials; review for new accounts, scheduled tasks, and persistence on `dc01`.
-5. **Scope the breach:** Treat `/srv/finance` and `/srv/hr` as exfiltrated. Engage IR/legal for data-breach notification; identify exact records in the 570 MB archive. Recover/inspect `/tmp/.cache.tgz` on `files01`.
-6. **Block Tor & harden auth:** Block `185.220.101.0/24` (and a current Tor exit list); enforce account lockout + MFA on SSH; remove password auth for service accounts (keys only) on internet-reachable hosts.
-7. **Detections to deploy:** Alert on (a) >N auth failures per src_ip/user in 5 min, (b) any `priv_escalation`/`sudo su -` on service accounts, (c) outbound `bytes_out` anomalies to external IPs, (d) "first ever login" notes on service accounts.
-
-*All findings above are backed by queries executed against `index=security` this session. The Tor spray was verified as unsuccessful and is reported as a failed attempt, not a breach.*
+The live runner generates this section from actual MCP tool inputs. It is not
+model-authored and contains the exact SPL submitted during that run.

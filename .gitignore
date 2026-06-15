@@ -4,7 +4,11 @@
 __pycache__/
 *.pyc
 .venv/
+.local/
 docker/apps/*.tgz
 docker/apps/*.spl
 reports/
 *.token
+.ruff_cache/
+.pytest_cache/
+reports/web/

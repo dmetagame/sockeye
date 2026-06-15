@@ -1,0 +1,34 @@
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: sockeye-web:local
+    init: true
+    restart: unless-stopped
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+      SPLUNK_MCP_URL: http://splunk:8089/services/mcp
+      SPLUNK_MCP_TOKEN: ${SPLUNK_MCP_TOKEN:?run scripts/setup_splunk.sh first}
+      SOCKEYE_ALLOW_INSECURE_REMOTE_HTTP: "true" # Private Compose network only.
+      SOCKEYE_WEB_API_KEY: ${SOCKEYE_WEB_API_KEY:?set SOCKEYE_WEB_API_KEY in .env}
+      SOCKEYE_MODEL: ${SOCKEYE_MODEL:-sonnet}
+      SOCKEYE_STATE_DIR: /data
+      SOCKEYE_REQUIRE_ANTHROPIC_API_KEY: "true"
+    ports:
+      - "${SOCKEYE_WEB_BIND:-127.0.0.1}:${SOCKEYE_WEB_PORT:-3000}:8000"
+    volumes:
+      - sockeye-data:/data
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      splunk:
+        condition: service_healthy
+
+volumes:
+  sockeye-data:

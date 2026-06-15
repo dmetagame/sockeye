@@ -1,6 +1,6 @@
 services:
   splunk:
-    image: splunk/splunk:latest
+    image: splunk/splunk:10.4.0
     container_name: sockeye-splunk
     hostname: sockeye-splunk
     environment:
@@ -9,12 +9,18 @@ services:
       SPLUNK_PASSWORD: ${SPLUNK_PASSWORD:?set SPLUNK_PASSWORD in .env}
       SPLUNK_HEC_TOKEN: ${SPLUNK_HEC_TOKEN:?set SPLUNK_HEC_TOKEN in .env}
     ports:
-      - "8000:8000"   # Splunk Web
-      - "8088:8088"   # HTTP Event Collector
-      - "8089:8089"   # Management API + MCP endpoint (/services/mcp)
+      - "127.0.0.1:8000:8000"   # Splunk Web
+      - "127.0.0.1:8088:8088"   # HTTP Event Collector
+      - "127.0.0.1:8089:8089"   # Management API + MCP endpoint
     volumes:
       - splunk-var:/opt/splunk/var
       - splunk-etc:/opt/splunk/etc
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --user \"admin:$${SPLUNK_PASSWORD}\" http://localhost:8089/services/server/health/splunkd/details >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
 
 volumes:
   splunk-var:

@@ -1,91 +1,186 @@
 #!/usr/bin/env bash
-# One-shot Splunk configuration for Sockeye.
-# Prereqs: container from docker/docker-compose.yml is up, and the official
-# Splunk MCP Server app (.tgz from https://splunkbase.splunk.com/app/7931)
-# is placed in docker/apps/.
+# Configure the local Sockeye Splunk demo and mint a least-privilege MCP token.
 set -euo pipefail
 
-HERE="$(cd "$(dirname "$0")/.." && pwd)"
-source "$HERE/.env"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ENV_FILE="$ROOT/.env"
+CONTAINER=${SPLUNK_CONTAINER:-sockeye-splunk}
+AGENT_USER=${SPLUNK_MCP_USERNAME:-sockeye-agent}
+AGENT_ROLE=sockeye_agent
 
-MGMT=${SPLUNK_MGMT_URL:-https://localhost:8089}
+die() { echo "ERROR: $*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
+
+need curl
+need docker
+need python3
+[ -f "$ENV_FILE" ] || die "Missing .env. Copy .env.example to .env first."
+
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+: "${SPLUNK_PASSWORD:?set SPLUNK_PASSWORD in .env}"
+: "${SPLUNK_HEC_TOKEN:?set SPLUNK_HEC_TOKEN in .env}"
+[[ "$AGENT_USER" =~ ^[A-Za-z0-9_.-]+$ ]] || die "Invalid SPLUNK_MCP_USERNAME"
+
 AUTH="admin:${SPLUNK_PASSWORD}"
-CURL=(curl -ks -u "$AUTH")
 
-api_up() { "${CURL[@]}" --max-time 5 "$MGMT/services/server/info?output_mode=json" >/dev/null 2>&1; }
+detect_management_url() {
+  local candidate
+  for candidate in https://127.0.0.1:8089 http://127.0.0.1:8089; do
+    if curl --insecure --silent --show-error --fail --max-time 4 \
+      --user "$AUTH" "$candidate/services/server/info?output_mode=json" \
+      >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
 
-wait_up() {
-  for _ in $(seq 1 90); do api_up && return 0; sleep 5; done
-  echo "!! Splunk management API did not come up"; exit 1
+wait_for_management() {
+  local url=$1
+  local curl_args=(--silent --show-error --fail --max-time 5 --user "$AUTH")
+  [[ "$url" == https://* ]] && curl_args+=(--insecure)
+  for _ in $(seq 1 90); do
+    if curl "${curl_args[@]}" "$url/services/server/info?output_mode=json" \
+      >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
 }
 
 echo "==> Waiting for Splunk management API..."
-wait_up
-"${CURL[@]}" "$MGMT/services/server/info?output_mode=json" \
+BOOT_URL=""
+for _ in $(seq 1 90); do
+  BOOT_URL=$(detect_management_url || true)
+  [ -n "$BOOT_URL" ] && break
+  sleep 2
+done
+[ -n "$BOOT_URL" ] || die "Splunk management API did not become ready"
+
+BOOT_CURL=(curl --silent --show-error --fail --max-time 30 --user "$AUTH")
+[[ "$BOOT_URL" == https://* ]] && BOOT_CURL+=(--insecure)
+"${BOOT_CURL[@]}" "$BOOT_URL/services/server/info?output_mode=json" \
   | python3 -c "import json,sys; d=json.load(sys.stdin)['entry'][0]['content']; print('    Splunk', d['version'], 'on', d['serverName'])"
 
-echo "==> Creating 'security' index..."
-"${CURL[@]}" "$MGMT/services/data/indexes" -d name=security -d datatype=event >/dev/null \
-  || echo "    (already exists)"
-
-APP_PKG=$(ls "$HERE"/docker/apps/*.tgz "$HERE"/docker/apps/*.spl 2>/dev/null | head -1 || true)
-if [ -z "$APP_PKG" ]; then
-  echo "!! No MCP app package found in docker/apps/."
-  echo "   Download it from https://splunkbase.splunk.com/app/7931 and rerun."
-  exit 1
+echo "==> Ensuring index=security exists..."
+if ! "${BOOT_CURL[@]}" "$BOOT_URL/services/data/indexes/security?output_mode=json" \
+  >/dev/null 2>&1; then
+  "${BOOT_CURL[@]}" "$BOOT_URL/services/data/indexes" \
+    --data-urlencode name=security --data-urlencode datatype=event >/dev/null
 fi
 
-echo "==> Installing MCP Server app: $(basename "$APP_PKG")"
-docker cp "$APP_PKG" sockeye-splunk:/tmp/mcp-app.pkg
-"${CURL[@]}" "$MGMT/services/apps/local" \
-  -d filename=true -d name=/tmp/mcp-app.pkg -d update=true >/dev/null
+mapfile -t APP_PACKAGES < <(
+  find "$ROOT/docker/apps" -maxdepth 1 -type f \( -name '*.tgz' -o -name '*.spl' \) -print | sort
+)
+[ "${#APP_PACKAGES[@]}" -eq 1 ] || die "Place exactly one Splunk MCP app package in docker/apps/"
+APP_PACKAGE=${APP_PACKAGES[0]}
 
-echo "==> Enabling token auth + MCP capabilities (authorize.conf)..."
-# NOTE: do NOT POST capabilities to /services/authorization/roles/<role> —
-# that REPLACES the role's explicit capability list and strips admin rights.
-docker exec -u root sockeye-splunk sh -c 'cat > /opt/splunk/etc/system/local/authorize.conf <<CONF
+echo "==> Installing $(basename "$APP_PACKAGE")..."
+docker cp "$APP_PACKAGE" "$CONTAINER:/tmp/sockeye-mcp-app.pkg" >/dev/null
+"${BOOT_CURL[@]}" "$BOOT_URL/services/apps/local" \
+  --data-urlencode filename=true \
+  --data-urlencode name=/tmp/sockeye-mcp-app.pkg \
+  --data-urlencode update=true >/dev/null
+
+echo "==> Installing isolated Sockeye RBAC and loopback transport config..."
+docker exec -u root "$CONTAINER" sh -c '
+  install -d -o splunk -g splunk /opt/splunk/etc/apps/sockeye_demo/default
+  install -d -o splunk -g splunk /opt/splunk/etc/apps/sockeye_demo/local
+  cat > /opt/splunk/etc/apps/sockeye_demo/default/app.conf <<"CONF"
+[install]
+is_configured = 1
+[ui]
+is_visible = 0
+CONF
+  cat > /opt/splunk/etc/apps/sockeye_demo/local/authorize.conf <<"CONF"
 [tokens_auth]
 disabled = 0
 
-[role_admin]
-mcp_tool_admin = enabled
+[role_sockeye_agent]
+search = enabled
 mcp_tool_execute = enabled
+srchIndexesAllowed = security
+srchIndexesDefault = security
+srchFilter = index=security
 CONF
-chown splunk:splunk /opt/splunk/etc/system/local/authorize.conf'
+  cat > /opt/splunk/etc/apps/sockeye_demo/local/server.conf <<"CONF"
+[sslConfig]
+enableSplunkdSSL = false
+CONF
+  chown -R splunk:splunk /opt/splunk/etc/apps/sockeye_demo
+'
 
-echo "==> Restarting Splunk to activate app + capabilities..."
-"${CURL[@]}" -X POST "$MGMT/services/server/control/restart" >/dev/null
-echo "    waiting for splunkd to go down..."
-for _ in $(seq 1 36); do api_up || break; sleep 5; done
-api_up && { echo "!! splunkd never went down; restart with: docker restart sockeye-splunk"; exit 1; }
-echo "    waiting for splunkd to come back..."
-wait_up
+echo "==> Restarting Splunk..."
+"${BOOT_CURL[@]}" --request POST "$BOOT_URL/services/server/control/restart" >/dev/null
+sleep 5
+MGMT_URL=http://127.0.0.1:8089
+wait_for_management "$MGMT_URL" || die "Splunk did not return on $MGMT_URL"
+API=(
+  curl --silent --show-error --fail --max-time 30
+  --retry 12 --retry-all-errors --retry-delay 2
+  --user "$AUTH"
+)
 
-echo "==> Minting encrypted MCP token (app endpoint /services/mcp_token)..."
-# The MCP server only accepts RSA-encrypted tokens with audience 'mcp',
-# minted by the app itself — generic Splunk JWTs are rejected.
+echo "==> Ensuring dedicated MCP user exists..."
+AGENT_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+if "${API[@]}" "$MGMT_URL/services/authentication/users/$AGENT_USER?output_mode=json" \
+  >/dev/null 2>&1; then
+  "${API[@]}" "$MGMT_URL/services/authentication/users/$AGENT_USER" \
+    --data-urlencode roles="$AGENT_ROLE" >/dev/null
+else
+  "${API[@]}" "$MGMT_URL/services/authentication/users" \
+    --data-urlencode name="$AGENT_USER" \
+    --data-urlencode password="$AGENT_PASSWORD" \
+    --data-urlencode roles="$AGENT_ROLE" >/dev/null
+fi
+unset AGENT_PASSWORD
+
+echo "==> Minting a 30-day encrypted MCP token for $AGENT_USER..."
 TOKEN=""
 for _ in $(seq 1 12); do
-  TOKEN=$("${CURL[@]}" "$MGMT/services/mcp_token?username=admin&expires_on=%2B30d" \
-    | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || true)
+  TOKEN=$("${API[@]}" \
+    "$MGMT_URL/services/mcp_token?username=$AGENT_USER&expires_on=%2B30d" 2>/dev/null \
+    | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))" \
+    2>/dev/null || true)
   [ -n "$TOKEN" ] && break
-  sleep 5
+  sleep 2
 done
-[ -z "$TOKEN" ] && { echo "!! token minting failed — check: docker logs sockeye-splunk"; exit 1; }
+[ -n "$TOKEN" ] || die "MCP token minting failed"
 
-if grep -q '^SPLUNK_MCP_TOKEN=' "$HERE/.env"; then
-  sed -i "s|^SPLUNK_MCP_TOKEN=.*|SPLUNK_MCP_TOKEN=$TOKEN|" "$HERE/.env"
-else
-  echo "SPLUNK_MCP_TOKEN=$TOKEN" >> "$HERE/.env"
-fi
-chmod 600 "$HERE/.env"
-echo "    token written to .env (SPLUNK_MCP_TOKEN, expires +30d)"
+MCP_URL=http://127.0.0.1:8089/services/mcp
+TOKEN="$TOKEN" MCP_URL="$MCP_URL" ENV_FILE="$ENV_FILE" python3 - <<'PY'
+import os
+from pathlib import Path
 
-echo "==> Verifying MCP endpoint..."
-CODE=$(curl -ks -o /dev/null -w '%{http_code}' "$MGMT/services/mcp" \
-  -H "Authorization: Bearer $TOKEN" -H "Accept: application/json, text/event-stream" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"sockeye-setup","version":"0.1"}}}')
-echo "    POST /services/mcp -> HTTP $CODE"
-[ "$CODE" = "200" ] && echo "==> Done. Splunk MCP server is live." \
-  || { echo "!! MCP endpoint not answering 200 — check the app in Splunk Web > Apps."; exit 1; }
+path = Path(os.environ["ENV_FILE"])
+updates = {
+    "SPLUNK_MCP_URL": os.environ["MCP_URL"],
+    "SPLUNK_MCP_TOKEN": os.environ["TOKEN"],
+}
+lines = path.read_text(encoding="utf-8").splitlines()
+seen = set()
+output = []
+for line in lines:
+    key = line.split("=", 1)[0].strip() if "=" in line else ""
+    if key in updates:
+        output.append(f"{key}={updates[key]}")
+        seen.add(key)
+    else:
+        output.append(line)
+for key, value in updates.items():
+    if key not in seen:
+        output.append(f"{key}={value}")
+path.write_text("\n".join(output) + "\n", encoding="utf-8")
+path.chmod(0o600)
+PY
+
+echo "==> Verifying MCP authentication and required tools..."
+SPLUNK_MCP_URL="$MCP_URL" SPLUNK_MCP_TOKEN="$TOKEN" \
+  python3 "$ROOT/scripts/verify_mcp.py"
+
+echo "==> Done. Token saved to .env; Splunk management is loopback-only HTTP."

@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Sockeye architecture</title>
+  <desc id="desc">Data flows from the synthetic event generator through Splunk HEC into the security index. Claude uses the Sockeye Python runner and the official Splunk MCP Server to investigate the data and produce an evidence-backed report.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071426"/>
+      <stop offset="1" stop-color="#102d46"/>
+    </linearGradient>
+    <linearGradient id="agent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d6f85"/>
+      <stop offset="1" stop-color="#12a3a8"/>
+    </linearGradient>
+    <linearGradient id="splunk" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3d5f16"/>
+      <stop offset="1" stop-color="#65a637"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#72d7df"/>
+    </marker>
+    <style>
+      .title { font: 700 48px Arial, sans-serif; fill: #f4fbff; }
+      .subtitle { font: 400 22px Arial, sans-serif; fill: #a9c5d6; }
+      .group { font: 700 24px Arial, sans-serif; fill: #dff8ff; letter-spacing: 1px; }
+      .box-title { font: 700 25px Arial, sans-serif; fill: #fff; }
+      .box-copy { font: 400 18px Arial, sans-serif; fill: #e4f1f5; }
+      .label { font: 700 17px Arial, sans-serif; fill: #72d7df; }
+      .small { font: 400 16px Arial, sans-serif; fill: #b9d0db; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#background)"/>
+  <circle cx="1460" cy="100" r="240" fill="#0ca6a6" opacity="0.08"/>
+  <circle cx="130" cy="820" r="260" fill="#7bd342" opacity="0.07"/>
+
+  <text x="90" y="90" class="title">Sockeye</text>
+  <text x="90" y="128" class="subtitle">Agentic SOC triage on the official Splunk MCP Server</text>
+
+  <rect x="70" y="195" width="360" height="470" rx="28" fill="#0c2034" stroke="#2e536d" stroke-width="2" filter="url(#shadow)"/>
+  <text x="105" y="240" class="group">DEMO DATA</text>
+  <rect x="105" y="285" width="290" height="135" rx="18" fill="#173a52"/>
+  <text x="135" y="330" class="box-title">Event generator</text>
+  <text x="135" y="364" class="box-copy">scripts/seed_data.py</text>
+  <text x="135" y="393" class="small">Deterministic 36-hour scenario</text>
+  <rect x="105" y="480" width="290" height="135" rx="18" fill="#173a52"/>
+  <text x="135" y="525" class="box-title">Security events</text>
+  <text x="135" y="559" class="box-copy">Auth, audit, and network</text>
+  <text x="135" y="588" class="small">Stable event IDs for deduplication</text>
+
+  <rect x="510" y="195" width="500" height="590" rx="28" fill="#0c2034" stroke="#2e536d" stroke-width="2" filter="url(#shadow)"/>
+  <text x="545" y="240" class="group">SPLUNK ENTERPRISE 10.4</text>
+  <rect x="555" y="285" width="410" height="120" rx="18" fill="url(#splunk)"/>
+  <text x="590" y="333" class="box-title">HTTP Event Collector</text>
+  <text x="590" y="369" class="box-copy">Loopback port 8088</text>
+  <rect x="555" y="460" width="410" height="120" rx="18" fill="#294d18" stroke="#76bc43"/>
+  <text x="590" y="508" class="box-title">index=security</text>
+  <text x="590" y="544" class="box-copy">Searchable operational evidence</text>
+  <rect x="555" y="635" width="410" height="120" rx="18" fill="url(#splunk)"/>
+  <text x="590" y="683" class="box-title">Official Splunk MCP Server</text>
+  <text x="590" y="719" class="box-copy">Read-only SPL query and RBAC enforcement</text>
+
+  <rect x="1090" y="195" width="440" height="590" rx="28" fill="#0c2034" stroke="#2e536d" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1125" y="240" class="group">SOCKEYE WEB + AGENT</text>
+  <rect x="1135" y="285" width="350" height="135" rx="18" fill="url(#agent)"/>
+  <text x="1170" y="333" class="box-title">Claude Agent SDK</text>
+  <text x="1170" y="369" class="box-copy">Hypothesis, query, pivot, verify</text>
+  <text x="1170" y="398" class="small">Explicit read-only MCP allowlist</text>
+  <rect x="1135" y="485" width="350" height="135" rx="18" fill="#124256" stroke="#24b6bd"/>
+  <text x="1170" y="533" class="box-title">Web dashboard + report</text>
+  <text x="1170" y="569" class="box-copy">Live trace, verdict, IOCs, actions</text>
+  <text x="1170" y="598" class="small">Machine-generated SPL execution audit</text>
+  <rect x="1135" y="675" width="350" height="70" rx="18" fill="#102e42"/>
+  <text x="1170" y="718" class="box-copy">reports/triage-*.md</text>
+
+  <path d="M 395 352 C 455 352, 480 345, 555 345" fill="none" stroke="#72d7df" stroke-width="5" marker-end="url(#arrow)"/>
+  <text x="440" y="330" class="label">JSON via HEC</text>
+  <path d="M 760 405 L 760 460" fill="none" stroke="#72d7df" stroke-width="5" marker-end="url(#arrow)"/>
+  <path d="M 760 580 L 760 635" fill="none" stroke="#72d7df" stroke-width="5" marker-end="url(#arrow)"/>
+  <path d="M 965 695 C 1030 695, 1060 355, 1135 355" fill="none" stroke="#72d7df" stroke-width="5" marker-end="url(#arrow)"/>
+  <path d="M 1135 385 C 1060 385, 1030 665, 965 665" fill="none" stroke="#72d7df" stroke-width="5" marker-end="url(#arrow)"/>
+  <text x="985" y="510" class="label">MCP over loopback HTTP</text>
+  <text x="985" y="538" class="small">Encrypted, expiring bearer token</text>
+  <path d="M 1310 420 L 1310 485" fill="none" stroke="#72d7df" stroke-width="5" marker-end="url(#arrow)"/>
+
+  <text x="90" y="845" class="small">Security boundary: dedicated Splunk role, index-scoped search access, loopback-only exposed ports, and no write-capable agent tools.</text>
+</svg>

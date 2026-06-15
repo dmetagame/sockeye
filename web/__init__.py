@@ -1,0 +1,1 @@
+"""Sockeye web application."""

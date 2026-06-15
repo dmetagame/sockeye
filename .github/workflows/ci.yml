@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.lock -r requirements-dev.txt
+      - name: Static checks
+        run: |
+          python -m compileall -q agent scripts tests web
+          ruff check .
+          bash -n scripts/setup_splunk.sh
+          node --check web/static/app.js
+      - name: Tests
+        run: pytest
+      - name: Dependency integrity
+        run: |
+          pip check
+          pip-audit -r requirements.lock
+      - name: Compose validation
+        run: docker compose -f docker/docker-compose.yml --env-file .env.example config -q
+      - name: Web image
+        run: docker build --tag sockeye-web:ci .

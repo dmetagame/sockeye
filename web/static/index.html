@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Sockeye agentic SOC triage dashboard">
+    <title>Sockeye | Agentic SOC Triage</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <a class="brand" href="/" aria-label="Sockeye home">
+          <span class="brand-mark" aria-hidden="true">S</span>
+          <span><strong>Sockeye</strong><small>Agentic SOC triage</small></span>
+        </a>
+
+        <button class="new-run" id="new-run-button" type="button">
+          <span aria-hidden="true">+</span> New investigation
+        </button>
+
+        <nav class="history" aria-label="Investigation history">
+          <div class="section-label">Recent investigations</div>
+          <div id="history-list" class="history-list">
+            <p class="muted compact">No investigations yet.</p>
+          </div>
+        </nav>
+
+        <div class="system-card">
+          <div><span class="status-dot" id="system-dot"></span> System</div>
+          <strong id="system-status">Checking</strong>
+          <small>Splunk MCP / Claude Agent SDK</small>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Security operations</p>
+            <h1>Investigation workspace</h1>
+          </div>
+          <div class="topbar-actions">
+            <span class="privacy-badge">Read-only MCP</span>
+            <button class="ghost-button hidden" id="auth-button" type="button">Access key</button>
+          </div>
+        </header>
+
+        <section class="hero" id="launch-panel">
+          <div class="hero-copy">
+            <p class="eyebrow accent">Evidence before conclusions</p>
+            <h2>Turn raw Splunk events into a reviewable incident report.</h2>
+            <p>Sockeye sweeps broadly, follows suspicious evidence, and preserves every SPL query behind its verdict.</p>
+          </div>
+          <form id="investigation-form" class="launch-form">
+            <label>
+              <span>Splunk index</span>
+              <input id="index-input" name="index" value="security" pattern="[A-Za-z0-9_-]+" maxlength="64" required>
+            </label>
+            <label>
+              <span>Time range</span>
+              <select id="range-input" name="earliest">
+                <option value="-24h">Last 24 hours</option>
+                <option value="-48h" selected>Last 48 hours</option>
+                <option value="-7d">Last 7 days</option>
+                <option value="-30d">Last 30 days</option>
+              </select>
+            </label>
+            <button class="primary-button" id="start-button" type="submit">
+              Run investigation <span aria-hidden="true">&rarr;</span>
+            </button>
+          </form>
+        </section>
+
+        <section class="run-view hidden" id="run-view" aria-live="polite">
+          <div class="run-heading">
+            <div>
+              <p class="eyebrow" id="run-kicker">Investigation</p>
+              <h2 id="run-title">index=security</h2>
+              <p class="muted" id="run-subtitle">Awaiting agent</p>
+            </div>
+            <div class="run-actions">
+              <span class="run-status queued" id="run-status">Queued</span>
+              <button class="ghost-button hidden" id="download-button" type="button">Download report</button>
+            </div>
+          </div>
+
+          <div class="metric-grid">
+            <article class="metric-card">
+              <span>Status</span><strong id="metric-status">Queued</strong>
+            </article>
+            <article class="metric-card">
+              <span>SPL queries</span><strong id="metric-queries">0</strong>
+            </article>
+            <article class="metric-card">
+              <span>Agent turns</span><strong id="metric-turns">-</strong>
+            </article>
+            <article class="metric-card">
+              <span>Elapsed</span><strong id="metric-elapsed">0:00</strong>
+            </article>
+          </div>
+
+          <div class="content-grid">
+            <section class="activity-panel panel">
+              <div class="panel-heading">
+                <div><p class="eyebrow">Live trace</p><h3>Investigation activity</h3></div>
+                <span class="live-indicator" id="live-indicator"><i></i> Live</span>
+              </div>
+              <div class="activity-feed" id="activity-feed"></div>
+            </section>
+
+            <section class="report-panel panel">
+              <div class="panel-heading">
+                <div><p class="eyebrow">Analyst handoff</p><h3>Incident report</h3></div>
+                <span class="muted compact" id="report-state">Generated after triage</span>
+              </div>
+              <div class="report-empty" id="report-empty">
+                <div class="scan-visual" aria-hidden="true"><span></span><span></span><span></span></div>
+                <strong>Report pending</strong>
+                <p>Sockeye is gathering evidence from Splunk.</p>
+              </div>
+              <article class="markdown hidden" id="report-content"></article>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="auth-dialog">
+      <form method="dialog" id="auth-form" class="dialog-card">
+        <button class="dialog-close" value="cancel" aria-label="Close">&times;</button>
+        <p class="eyebrow accent">Protected dashboard</p>
+        <h2>Enter the Sockeye access key</h2>
+        <p>The key stays in this browser tab and is sent only in API request headers.</p>
+        <label><span>Access key</span><input id="api-key-input" type="password" autocomplete="current-password" required></label>
+        <p class="form-error hidden" id="auth-error"></p>
+        <button class="primary-button" value="default" type="submit">Unlock dashboard</button>
+      </form>
+    </dialog>
+
+    <div class="toast hidden" id="toast" role="status"></div>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
